@@ -3,6 +3,7 @@ package translation;
 import extension.TranslatorExtension;
 import translation.translators.ArgosOpenTechTranslator;
 import translation.translators.MicrosoftTranslator;
+import translation.translators.DeepLTranslator;
 
 public class TranslatorFactory {
 
@@ -11,8 +12,9 @@ public class TranslatorFactory {
 
         if (api.equals("microsoft")) {
             return new MicrosoftTranslator(t.getMicrosoftKey(), t.getMicrosoftRegion());
-        }
-        else {
+        } else if (api.equals("deepl")) {
+            return new DeepLTranslator(t.getDeepLKey());
+        } else {
             return new ArgosOpenTechTranslator();
         }
     }

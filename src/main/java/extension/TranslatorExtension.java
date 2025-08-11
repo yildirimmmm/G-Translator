@@ -5,8 +5,6 @@ import gearth.extensions.ExtensionInfo;
 import gearth.extensions.parsers.HEntity;
 import gearth.protocol.HMessage;
 import gearth.protocol.HPacket;
-import javafx.beans.value.ChangeListener;
-import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.scene.control.*;
 import javafx.scene.layout.Pane;
@@ -17,6 +15,8 @@ import translation.TranslatorFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.io.File;
+import java.util.concurrent.ConcurrentHashMap;
 
 //todo:
 // * group names
@@ -25,7 +25,7 @@ import java.util.*;
 @ExtensionInfo(
         Title =  "G-Translator",
         Description =  "Translate the hotel",
-        Version =  "1.0.2",
+        Version =  "1.1.0",
         Author =  "sirjonasxx & Tripical"
 )
 public class TranslatorExtension extends ExtensionForm {
@@ -33,8 +33,11 @@ public class TranslatorExtension extends ExtensionForm {
     public Pane apiMicrosoftInfo;
     public TextField apiMicrosoftKey;
     public TextField apiMicrosoftRegion;
+    public Pane apiDeepLInfo;
+    public TextField apiDeepLKey;
     public RadioButton rdArgos;
     public RadioButton rdMicrosoft;
+    public RadioButton rdDeepL;
     public ToggleGroup tglAPI;
 
     private volatile int userId = -1;
@@ -58,15 +61,89 @@ public class TranslatorExtension extends ExtensionForm {
 
     private volatile boolean isActive = false;
 
+
+    private SettingsManager settingsManager;
+    private Map<String, Object> settings = new ConcurrentHashMap<>();
+
     public void initialize() {
         myLang.getItems().addAll(Language.values());
-        myLang.getSelectionModel().selectFirst();
-
         sourceLang.getItems().addAll(Language.values());
+
+        settingsManager = new SettingsManager(new File("."));
+        settings.putAll(settingsManager.load());
+
+        myLang.getSelectionModel().selectFirst();
         sourceLang.getSelectionModel().selectFirst();
 
-        rdMicrosoft.selectedProperty().addListener((obs,old,val) -> apiMicrosoftInfo.setDisable(!val));
-//        rdArgos.selectedProperty().addListener((obs,old,val) -> translateNavigator.setDisable(val));
+        hideAllApiPanels();
+
+        myLang.valueProperty().addListener((o,ov,nv) -> { settings.put("myLang", nv.name()); persist(); });
+        sourceLang.valueProperty().addListener((o,ov,nv) -> { settings.put("srcLang", nv.name()); persist(); });
+
+        addCheckboxListener(showOriginal, "showOriginal");
+        addCheckboxListener(translateIncoming, "trIn");
+        addCheckboxListener(translateOutgoing, "trOut");
+        addCheckboxListener(translateWired, "trWired");
+        addCheckboxListener(translateRoomInfo, "trRoomInfo");
+        addCheckboxListener(translateNavigator, "trNav");
+        addCheckboxListener(translateChatIn, "trChatIn");
+        addCheckboxListener(translateChatOut, "trChatOut");
+
+        apiMicrosoftKey.textProperty().addListener((o,ov,nv) -> { settings.put("msKey", nv); persist(); });
+        apiMicrosoftRegion.textProperty().addListener((o,ov,nv) -> { settings.put("msRegion", nv); persist(); });
+        apiDeepLKey.textProperty().addListener((o,ov,nv) -> { settings.put("deeplKey", nv); persist(); });
+
+        rdMicrosoft.selectedProperty().addListener((obs,old,val) -> { if (val) { showMicrosoft(); settings.put("api", "microsoft"); persist(); } });
+        rdDeepL.selectedProperty().addListener((obs,old,val) -> { if (val) { showDeepL(); settings.put("api", "deepl"); persist(); } });
+        rdArgos.selectedProperty().addListener((obs,old,val) -> { if (val) { hideAllApiPanels(); settings.put("api", "argos"); persist(); } });
+
+        applySavedState();
+    }
+
+    private void applySavedState() {
+        String myLangSaved = (String) settings.get("myLang");
+        if (myLangSaved != null) safeSelectLang(myLang, myLangSaved);
+        String srcLangSaved = (String) settings.get("srcLang");
+        if (srcLangSaved != null) safeSelectLang(sourceLang, srcLangSaved);
+
+        apiMicrosoftKey.setText((String) settings.getOrDefault("msKey", ""));
+        apiMicrosoftRegion.setText((String) settings.getOrDefault("msRegion", "global"));
+        apiDeepLKey.setText((String) settings.getOrDefault("deeplKey", ""));
+
+        setIfPresent(showOriginal, "showOriginal");
+        setIfPresent(translateIncoming, "trIn");
+        setIfPresent(translateOutgoing, "trOut");
+        setIfPresent(translateWired, "trWired");
+        setIfPresent(translateRoomInfo, "trRoomInfo");
+        setIfPresent(translateNavigator, "trNav");
+        setIfPresent(translateChatIn, "trChatIn");
+        setIfPresent(translateChatOut, "trChatOut");
+
+        String api = (String) settings.getOrDefault("api", "argos");
+        switch (api) {
+            case "microsoft": rdMicrosoft.setSelected(true); break;
+            case "deepl": rdDeepL.setSelected(true); break;
+            default: rdArgos.setSelected(true); break;
+        }
+    }
+
+    private void safeSelectLang(ComboBox<Language> box, String name) {
+        try { box.getSelectionModel().select(Language.valueOf(name)); } catch (Exception ignored) {}
+    }
+
+    private void hideAllApiPanels() {
+        apiMicrosoftInfo.setVisible(false); apiMicrosoftInfo.setManaged(false); apiMicrosoftInfo.setDisable(true);
+        apiDeepLInfo.setVisible(false); apiDeepLInfo.setManaged(false); apiDeepLInfo.setDisable(true);
+    }
+    private void showMicrosoft() { hideAllApiPanels(); apiMicrosoftInfo.setVisible(true); apiMicrosoftInfo.setManaged(true); apiMicrosoftInfo.setDisable(false); }
+    private void showDeepL() { hideAllApiPanels(); apiDeepLInfo.setVisible(true); apiDeepLInfo.setManaged(true); apiDeepLInfo.setDisable(false); }
+
+    private void addCheckboxListener(CheckBox box, String key) { box.selectedProperty().addListener((o,ov,nv) -> { settings.put(key, nv); persist(); }); }
+    private void setIfPresent(CheckBox box, String key) { Object v = settings.get(key); if (v instanceof Boolean) box.setSelected((Boolean)v); }
+    private void persist() { settingsManager.save(settings); }
+
+    public String getDeepLKey() {
+        return apiDeepLKey.getText();
     }
 
 
@@ -189,10 +266,10 @@ public class TranslatorExtension extends ExtensionForm {
     }
 
     private void onReceiveDMOrInvitation(HMessage hMessage) {
-        if (isActive && translateChatIn.isSelected()) {
+    if (isActive && translateChatIn.isSelected()) {
             HPacket packet = hMessage.getPacket();
 
-            int sender = packet.readInteger();
+            packet.readInteger(); // sender
             String text = packet.readString(StandardCharsets.UTF_8);
 
             hMessage.setBlocked(true);
@@ -218,7 +295,7 @@ public class TranslatorExtension extends ExtensionForm {
         if (isActive && translateChatOut.isSelected()) {
             HPacket packet = hMessage.getPacket();
 
-            int receiver = packet.readInteger();
+            packet.readInteger(); // receiver
             String text = packet.readString(StandardCharsets.UTF_8);
 
             hMessage.setBlocked(true);
@@ -276,7 +353,7 @@ public class TranslatorExtension extends ExtensionForm {
 
             hMessage.setBlocked(true);
             int roomId = packet.readInteger();
-
+			
             int roomNamePacketIndex = packet.getReadIndex();
             String originalRoomName = packet.readString(StandardCharsets.UTF_8);
 
